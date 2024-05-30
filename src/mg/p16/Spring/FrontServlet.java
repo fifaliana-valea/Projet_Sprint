@@ -45,13 +45,19 @@ public class FrontServlet extends HttpServlet {
         if (!urlMaping.containsKey(controllerSearched)) {
             out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
         } else {
-            Mapping mapping = urlMaping.get(controllerSearched);
+            try {
+                Mapping mapping = urlMaping.get(controllerSearched);
+                Class<?> clazz = Class.forName(mapping.getClassName());
+                Method method = clazz.getMethod(mapping.getMethodeName());
+                Object object = clazz.getDeclaredConstructor().newInstance();
+                Object returnValue = method.invoke(object);
+                String string = (String) returnValue;
+                out.println("<p> La valeur de return est : " + string + "</p>");
+                out.close();
 
-            out.println("<p> URL: " + requestURL.toString() + "</p>");
-            out.println("<p>nom du Classe :" + mapping.getClassName() + "</p>");
-            out.println("<p>nom du Methode " + mapping.getMethodeName() + "</p>");
-
-            out.close();
+            } catch (Exception e) {
+                // TODO: handle exception
+            }
         }
     }
 
