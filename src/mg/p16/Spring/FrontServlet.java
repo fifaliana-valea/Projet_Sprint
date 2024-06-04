@@ -11,14 +11,17 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.servlet.ServletConfig;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_controlleur;
+import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 
 public class FrontServlet extends HttpServlet {
@@ -51,10 +54,19 @@ public class FrontServlet extends HttpServlet {
                 Method method = clazz.getMethod(mapping.getMethodeName());
                 Object object = clazz.getDeclaredConstructor().newInstance();
                 Object returnValue = method.invoke(object);
-                String string = (String) returnValue;
-                out.println("<p> La valeur de return est : " + string + "</p>");
+                if (returnValue instanceof String) {
+                    out.println("Méthode trouvée dans " + (String) returnValue);
+                } else if (returnValue instanceof ModelView) {
+                    ModelView modelView = (ModelView) returnValue;
+                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
+                    dispatcher.forward(request, response);
+                } else {
+                    out.println("Type de données non reconnu");
+                }
                 out.close();
-
             } catch (Exception e) {
                 // TODO: handle exception
             }
