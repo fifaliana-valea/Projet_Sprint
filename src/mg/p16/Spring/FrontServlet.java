@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,13 +28,23 @@ import mg.p16.utile.Mapping;
 public class FrontServlet extends HttpServlet {
     private String packageName; // Variable pour stocker le nom du package
     private static List<String> controllerNames = new ArrayList<>();
-    HashMap<String, Mapping> urlMaping = new HashMap<>();
+    private HashMap<String, Mapping> urlMaping = new HashMap<>();
+    String error = "";
 
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
-        packageName = config.getInitParameter("packageControllerName"); // Récupération du nom du package
-        scanControllers(packageName);
+        packageName = config.getInitParameter("packageControllerName"); // Recuperation du nom du package
+        try {
+            // Verification si le packageControllerName n'existe pas
+            if (packageName == null || packageName.isEmpty()) {
+                throw new Exception("Le nom du package du contrôleur n'est pas specifie.");
+            }
+            // Scanne les contrôleurs dans le package
+            scanControllers(packageName);
+        } catch (Exception e) {
+            error = e.getMessage();
+        }
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
@@ -44,9 +55,10 @@ public class FrontServlet extends HttpServlet {
 
         PrintWriter out = response.getWriter();
         response.setContentType("text/html");
-
-        if (!urlMaping.containsKey(controllerSearched)) {
-            out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
+        if (!error.isEmpty()) {
+            out.println(error);
+        } else if (!urlMaping.containsKey(controllerSearched)) {
+            out.println("<p>Aucune methode associee à ce chemin.</p>");
         } else {
             try {
                 Mapping mapping = urlMaping.get(controllerSearched);
@@ -55,7 +67,7 @@ public class FrontServlet extends HttpServlet {
                 Object object = clazz.getDeclaredConstructor().newInstance();
                 Object returnValue = method.invoke(object);
                 if (returnValue instanceof String) {
-                    out.println("Méthode trouvée dans " + (String) returnValue);
+                    out.println("Methode trouvee dans " + (String) returnValue);
                 } else if (returnValue instanceof ModelView) {
                     ModelView modelView = (ModelView) returnValue;
                     for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
@@ -64,11 +76,13 @@ public class FrontServlet extends HttpServlet {
                     RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
                     dispatcher.forward(request, response);
                 } else {
-                    out.println("Type de données non reconnu");
+                    out.println("Type de donnees non reconnu");
                 }
-                out.close();
             } catch (Exception e) {
-                // TODO: handle exception
+                e.printStackTrace();
+                out.println("<p>Erreur lors du traitement de la requête.</p>");
+            } finally {
+                out.close();
             }
         }
     }
@@ -85,13 +99,18 @@ public class FrontServlet extends HttpServlet {
         processRequest(request, response);
     }
 
-    private void scanControllers(String packageName) {
+    private void scanControllers(String packageName) throws Exception {
         try {
-
             // Charger le package et parcourir les classes
             ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
             String path = packageName.replace('.', '/');
             URL resource = classLoader.getResource(path);
+
+            // Verification si le package n'existe pas
+            if (resource == null) {
+                throw new Exception("Le package specifie n'existe pas: " + packageName);
+            }
+
             Path classPath = Paths.get(resource.toURI());
             Files.walk(classPath)
                     .filter(f -> f.toString().endsWith(".class"))
@@ -109,17 +128,22 @@ public class FrontServlet extends HttpServlet {
                                         Mapping mapping = new Mapping(className, m.getName());
                                         Annotation_Get annotation_Get = m.getAnnotation(Annotation_Get.class);
                                         String annotationValue = annotation_Get.value();
+
+                                        // Verification de duplication d'URL
+                                        if (urlMaping.containsKey(annotationValue)) {
+                                            throw new Exception("URL dupliquee detectee: " + annotationValue);
+                                        }
+
                                         urlMaping.put(annotationValue, mapping);
                                     }
                                 }
                             }
-                        } catch (ClassNotFoundException e) {
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                     });
         } catch (Exception e) {
-            e.printStackTrace();
+            throw e;
         }
     }
-
 }
