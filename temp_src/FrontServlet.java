@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -21,7 +22,9 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.p16.annotations.Annotation_Get;
+import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
+import mg.p16.annotations.Param;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 
@@ -63,9 +66,29 @@ public class FrontServlet extends HttpServlet {
             try {
                 Mapping mapping = urlMaping.get(controllerSearched);
                 Class<?> clazz = Class.forName(mapping.getClassName());
-                Method method = clazz.getMethod(mapping.getMethodeName());
                 Object object = clazz.getDeclaredConstructor().newInstance();
-                Object returnValue = method.invoke(object);
+                Method method = null;
+
+                for (Method m : clazz.getDeclaredMethods()) {
+                    if (m.getName().equals(mapping.getMethodeName())) {
+                        if (request.getMethod().equalsIgnoreCase("GET") && m.isAnnotationPresent(Annotation_Get.class)) {
+                            method = m;
+                            break;
+                        } else if (request.getMethod().equalsIgnoreCase("POST") && m.isAnnotationPresent(Annotation_Post.class)) {
+                            method = m;
+                            break;
+                        }
+                    }
+                }
+
+                if (method == null) {
+                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
+                    return;
+                }
+
+                // Inject parameters
+                Object[] parameters = getMethodParameters(method, request);
+                Object returnValue = method.invoke(object, parameters);
                 if (returnValue instanceof String) {
                     out.println("Methode trouvee dans " + (String) returnValue);
                 } else if (returnValue instanceof ModelView) {
@@ -123,18 +146,23 @@ public class FrontServlet extends HttpServlet {
                                 controllerNames.add(clazz.getSimpleName());
                                 Method[] methods = clazz.getMethods();
 
-                                for (Method m : methods) {
-                                    if (m.isAnnotationPresent(Annotation_Get.class)) {
-                                        Mapping mapping = new Mapping(className, m.getName());
-                                        Annotation_Get annotation_Get = m.getAnnotation(Annotation_Get.class);
-                                        String annotationValue = annotation_Get.value();
-
-                                        // Verification de duplication d'URL
-                                        if (urlMaping.containsKey(annotationValue)) {
-                                            throw new Exception("URL dupliquee detectee: " + annotationValue);
+                                for (Method methode : methods) {
+                                    if (methode.isAnnotationPresent(Annotation_Get.class)) {
+                                        Mapping map = new Mapping(className, methode.getName());
+                                        String valeur = methode.getAnnotation(Annotation_Get.class).value();
+                                        if (urlMaping.containsKey(valeur)) {
+                                            throw new Exception("double url" + valeur);
+                                        } else {
+                                            urlMaping.put(valeur, map);
                                         }
-
-                                        urlMaping.put(annotationValue, mapping);
+                                    } else if (methode.isAnnotationPresent(Annotation_Post.class)) {
+                                        Mapping map = new Mapping(className, methode.getName());
+                                        String valeur = methode.getAnnotation(Annotation_Post.class).value();
+                                        if (urlMaping.containsKey(valeur)) {
+                                            throw new Exception("double url" + valeur);
+                                        } else {
+                                            urlMaping.put(valeur, map);
+                                        }
                                     }
                                 }
                             }
@@ -145,5 +173,20 @@ public class FrontServlet extends HttpServlet {
         } catch (Exception e) {
             throw e;
         }
+    }
+
+    private Object[] getMethodParameters(Method method, HttpServletRequest request) {
+        Parameter[] parameters = method.getParameters();
+        Object[] parameterValues = new Object[parameters.length];
+
+        for (int i = 0; i < parameters.length; i++) {
+            if (parameters[i].isAnnotationPresent(Param.class)) {
+                Param param = parameters[i].getAnnotation(Param.class);
+                String paramValue = request.getParameter(param.value());
+                parameterValues[i] = paramValue; // Assuming all parameters are strings for simplicity
+            }
+        }
+
+        return parameterValues;
     }
 }
