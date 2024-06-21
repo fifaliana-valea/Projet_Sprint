@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.net.URISyntaxException;
+import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +26,7 @@ import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
 import mg.p16.annotations.Param;
+import mg.p16.annotations.ParamObject;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 
@@ -175,7 +177,24 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    private Object[] getMethodParameters(Method method, HttpServletRequest request) {
+  public static Object convertParameter(String value, Class<?> type) {
+        if (value == null) {
+            return null;
+        }
+        if (type == String.class) {
+            return value;
+        } else if (type == int.class || type == Integer.class) {
+            return Integer.parseInt(value);
+        } else if (type == long.class || type == Long.class) {
+            return Long.parseLong(value);
+        } else if (type == boolean.class || type == Boolean.class) {
+            return Boolean.parseBoolean(value);
+        }
+        // Ajoutez d'autres conversions nécessaires ici
+        return null;
+    }
+
+    private Object[] getMethodParameters(Method method, HttpServletRequest request)throws Exception {
         Parameter[] parameters = method.getParameters();
         Object[] parameterValues = new Object[parameters.length];
 
@@ -183,10 +202,37 @@ public class FrontServlet extends HttpServlet {
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
                 String paramValue = request.getParameter(param.value());
-                parameterValues[i] = paramValue; // Assuming all parameters are strings for simplicity
+                parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters are strings for simplicity
+            }
+            // Vérifie si le paramètre est annoté avec @RequestObject
+            else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
+                Class<?> parameterType = parameters[i].getType();  // Récupère le type du paramètre (le type de l'objet à créer)
+                Object parameterObject = parameterType.getDeclaredConstructor().newInstance();  // Crée une nouvelle instance de cet objet
+    
+                // Parcourt tous les champs (fields) de l'objet
+                for (Field field : parameterType.getDeclaredFields()) {
+                    String fieldName = field.getName();  // Récupère le nom du champ
+                    String paramName = parameterType.getSimpleName().toLowerCase() + "." + fieldName;  // Forme le nom du paramètre de la requête attendu
+                    String paramValue = request.getParameter(paramName);  // Récupère la valeur du paramètre de la requête
+
+                    // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la requête)
+                    if (paramValue != null) {
+                        Object convertedValue = convertParameter(paramValue, field.getType());  // Convertit la valeur de la requête en type de champ requis
+
+                        // Construit le nom du setter
+                        String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+                        Method setter = parameterType.getMethod(setterName, field.getType());  // Récupère la méthode setter correspondante
+                        setter.invoke(parameterObject, convertedValue);  // Appelle le setter pour définir la valeur convertie dans le champ de l'objet
+                    }
+                }
+                parameterValues[i] = parameterObject;  // Stocke l'objet créé dans le tableau des arguments
+            }
+            else{
+
             }
         }
 
         return parameterValues;
     }
+
 }
