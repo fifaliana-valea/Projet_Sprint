@@ -26,6 +26,7 @@ import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
 import mg.p16.annotations.Param;
+import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
@@ -211,8 +212,9 @@ public class FrontServlet extends HttpServlet {
     
                 // Parcourt tous les champs (fields) de l'objet
                 for (Field field : parameterType.getDeclaredFields()) {
+                    ParamField param = field.getAnnotation(ParamField.class);
                     String fieldName = field.getName();  // Récupère le nom du champ
-                    String paramName = parameterType.getSimpleName().toLowerCase() + "." + fieldName;  // Forme le nom du paramètre de la requête attendu
+                    String paramName = (param != null) ? param.value() : fieldName;  // Forme le nom du paramètre de la requête attendu
                     String paramValue = request.getParameter(paramName);  // Récupère la valeur du paramètre de la requête
 
                     // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la requête)
