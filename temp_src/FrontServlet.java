@@ -54,7 +54,7 @@ public class FrontServlet extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+            throws Exception {
         StringBuffer requestURL = request.getRequestURL();
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
@@ -105,8 +105,7 @@ public class FrontServlet extends HttpServlet {
                     out.println("Type de donnees non reconnu");
                 }
             } catch (Exception e) {
-                e.printStackTrace();
-                out.println("<p>Erreur lors du traitement de la requête.</p>");
+                out.println(e.getMessage());
             } finally {
                 out.close();
             }
@@ -116,13 +115,23 @@ public class FrontServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+            processRequest(request, response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal error occurred");
+        }
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+            processRequest(request, response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal error occurred");
+        }
     }
 
     private void scanControllers(String packageName) throws Exception {
@@ -214,7 +223,10 @@ public class FrontServlet extends HttpServlet {
                 for (Field field : parameterType.getDeclaredFields()) {
                     ParamField param = field.getAnnotation(ParamField.class);
                     String fieldName = field.getName();  // Récupère le nom du champ
-                    String paramName = (param != null) ? param.value() : fieldName;  // Forme le nom du paramètre de la requête attendu
+                    if (param == null) {
+                        throw new Exception("Etu002635 ,l'attribut " + fieldName +" dans le classe "+parameterObject.getClass().getSimpleName()+" n'a pas d'annotation ParamField "); 
+                    }  
+                    String paramName = param.value();
                     String paramValue = request.getParameter(paramName);  // Récupère la valeur du paramètre de la requête
 
                     // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la requête)
