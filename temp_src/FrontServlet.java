@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import jakarta.servlet.http.HttpSession;
+
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
@@ -25,9 +27,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
+import mg.p16.annotations.InjectSession;
 import mg.p16.annotations.Param;
 import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
+import mg.p16.models.CustomSession;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 
@@ -209,6 +213,7 @@ public class FrontServlet extends HttpServlet {
         Object[] parameterValues = new Object[parameters.length];
 
         for (int i = 0; i < parameters.length; i++) {
+            
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
                 String paramValue = request.getParameter(param.value());
@@ -240,6 +245,8 @@ public class FrontServlet extends HttpServlet {
                     }
                 }
                 parameterValues[i] = parameterObject;  // Stocke l'objet créé dans le tableau des arguments
+            }else if (parameters[i].isAnnotationPresent(InjectSession.class)) {
+                parameterValues[i] = new CustomSession(request.getSession());
             }
             else{
 
@@ -247,6 +254,18 @@ public class FrontServlet extends HttpServlet {
         }
 
         return parameterValues;
+    }
+
+    private void injectSessionIfNeeded(Object controllerInstance, HttpSession session) throws IllegalAccessException {
+        Field[] fields = controllerInstance.getClass().getDeclaredFields();
+        for (Field field : fields) {
+            if (field.isAnnotationPresent(InjectSession.class)) {
+                boolean accessible = field.isAccessible();
+                field.setAccessible(true);
+                field.set(controllerInstance, new CustomSession(session));
+                field.setAccessible(accessible);
+            }
+        }
     }
 
 }
