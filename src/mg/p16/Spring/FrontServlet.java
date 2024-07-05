@@ -26,7 +26,9 @@ import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
 import mg.p16.annotations.Param;
+import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
+import mg.p16.models.CustomSession;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 
@@ -53,7 +55,7 @@ public class FrontServlet extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+            throws Exception {
         StringBuffer requestURL = request.getRequestURL();
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
@@ -104,8 +106,7 @@ public class FrontServlet extends HttpServlet {
                     out.println("Type de donnees non reconnu");
                 }
             } catch (Exception e) {
-                e.printStackTrace();
-                out.println("<p>Erreur lors du traitement de la requête.</p>");
+                out.println(e.getMessage());
             } finally {
                 out.close();
             }
@@ -115,13 +116,23 @@ public class FrontServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+            processRequest(request, response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal error occurred");
+        }
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+            processRequest(request, response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal error occurred");
+        }
     }
 
     private void scanControllers(String packageName) throws Exception {
@@ -199,6 +210,16 @@ public class FrontServlet extends HttpServlet {
         Object[] parameterValues = new Object[parameters.length];
 
         for (int i = 0; i < parameters.length; i++) {
+             if (!parameters[i].isAnnotationPresent(Param.class)
+                    && !parameters[i].isAnnotationPresent(ParamObject.class)
+                    && !parameters[i].getType().equals(CustomSession.class)) {
+                throw new Exception("ETU002635: les attributs doivent etre annoter par Param ou ParamObject");
+            }
+            if (parameters[i].getType().equals(CustomSession.class)) {
+                CustomSession session = new CustomSession(request.getSession());
+                parameterValues[i] = session;
+            }
+
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
                 String paramValue = request.getParameter(param.value());
@@ -211,8 +232,12 @@ public class FrontServlet extends HttpServlet {
     
                 // Parcourt tous les champs (fields) de l'objet
                 for (Field field : parameterType.getDeclaredFields()) {
+                    ParamField param = field.getAnnotation(ParamField.class);
                     String fieldName = field.getName();  // Récupère le nom du champ
-                    String paramName = parameterType.getSimpleName().toLowerCase() + "." + fieldName;  // Forme le nom du paramètre de la requête attendu
+                    if (param == null) {
+                        throw new Exception("Etu002635 ,l'attribut " + fieldName +" dans le classe "+parameterObject.getClass().getSimpleName()+" n'a pas d'annotation ParamField "); 
+                    }  
+                    String paramName = param.value();
                     String paramValue = request.getParameter(paramName);  // Récupère la valeur du paramètre de la requête
 
                     // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la requête)
