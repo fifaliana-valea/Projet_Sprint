@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.gson.Gson;
+
 import jakarta.servlet.http.HttpSession;
 
 import jakarta.servlet.ServletConfig;
@@ -31,6 +33,7 @@ import mg.p16.annotations.InjectSession;
 import mg.p16.annotations.Param;
 import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
+import mg.p16.annotations.RestApi;
 import mg.p16.models.CustomSession;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
@@ -96,17 +99,32 @@ public class FrontServlet extends HttpServlet {
                 // Inject parameters
                 Object[] parameters = getMethodParameters(method, request);
                 Object returnValue = method.invoke(object, parameters);
-                if (returnValue instanceof String) {
-                    out.println("Methode trouvee dans " + (String) returnValue);
-                } else if (returnValue instanceof ModelView) {
-                    ModelView modelView = (ModelView) returnValue;
-                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
+                if (method.isAnnotationPresent(RestApi.class)) {
+                    response.setContentType("application/json");
+                    Gson gson = new Gson();
+                    if (returnValue instanceof String) {
+                        String jsonResponse = gson.toJson(returnValue);
+                        out.println(jsonResponse);
+                    } else if (returnValue instanceof ModelView) {
+                        ModelView modelView = (ModelView) returnValue;
+                        String jsonResponse = gson.toJson(modelView.getData());
+                        out.println(jsonResponse);
+                    } else {
+                        out.println("Type de donnees non reconnu");
                     }
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
-                    dispatcher.forward(request, response);
-                } else {
-                    out.println("Type de donnees non reconnu");
+                }else{
+                    if (returnValue instanceof String) {
+                        out.println("Methode trouvee dans " + (String) returnValue);
+                    } else if (returnValue instanceof ModelView) {
+                        ModelView modelView = (ModelView) returnValue;
+                        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                            request.setAttribute(entry.getKey(), entry.getValue());
+                        }
+                        RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
+                        dispatcher.forward(request, response);
+                    } else {
+                        out.println("Type de donnees non reconnu");
+                    }
                 }
             } catch (Exception e) {
                 out.println(e.getMessage());
