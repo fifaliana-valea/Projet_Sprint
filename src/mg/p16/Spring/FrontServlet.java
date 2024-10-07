@@ -34,9 +34,11 @@ import mg.p16.annotations.Param;
 import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
 import mg.p16.annotations.RestApi;
+import mg.p16.annotations.Url;
 import mg.p16.models.CustomSession;
 import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
+import mg.p16.utile.VerbAction;
 
 public class FrontServlet extends HttpServlet {
     private String packageName; // Variable pour stocker le nom du package
@@ -78,21 +80,26 @@ public class FrontServlet extends HttpServlet {
                 Class<?> clazz = Class.forName(mapping.getClassName());
                 Object object = clazz.getDeclaredConstructor().newInstance();
                 Method method = null;
+                
+                if (!mapping.isVerbPresent(request.getMethod())) {
+                    throw new Exception("Incoherence du verbe HTTP");
+                }
 
                 for (Method m : clazz.getDeclaredMethods()) {
-                    if (m.getName().equals(mapping.getMethodeName())) {
-                        if (request.getMethod().equalsIgnoreCase("GET") && m.isAnnotationPresent(Annotation_Get.class)) {
+                    for (VerbAction action : mapping.getVerbActions()) {
+                        if (m.getName().equals(action.getMethodeName()) && action.getVerb().equalsIgnoreCase(request.getMethod())) {
                             method = m;
-                            break;
-                        } else if (request.getMethod().equalsIgnoreCase("POST") && m.isAnnotationPresent(Annotation_Post.class)) {
-                            method = m;
-                            break;
+                            break; 
                         }
                     }
+                    if (method != null) {
+                        break;
+                    }
+                    
                 }
 
                 if (method == null) {
-                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
+                    out.println("<p>Aucune methode correspondante trouvee.</p>");
                     return;
                 }
 
@@ -179,26 +186,36 @@ public class FrontServlet extends HttpServlet {
                                     && !Modifier.isAbstract(clazz.getModifiers())) {
                                 controllerNames.add(clazz.getSimpleName());
                                 Method[] methods = clazz.getMethods();
-
-                                for (Method methode : methods) {
-                                    if (methode.isAnnotationPresent(Annotation_Get.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
-                                        String valeur = methode.getAnnotation(Annotation_Get.class).value();
-                                        if (urlMaping.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
-                                        } else {
-                                            urlMaping.put(valeur, map);
+                                for (Method method : methods) {
+                                    if (method.isAnnotationPresent(Url.class)) {
+                                        Url urlAnnotation = method.getAnnotation(Url.class);
+                                        String url = urlAnnotation.value();
+                                        String verb = "GET"; 
+                                        if (method.isAnnotationPresent(Annotation_Get.class)) {
+                                            verb = "GET";
+                                        } else if (method.isAnnotationPresent(Annotation_Post.class)) {
+                                            verb = "POST";
                                         }
-                                    } else if (methode.isAnnotationPresent(Annotation_Post.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
-                                        String valeur = methode.getAnnotation(Annotation_Post.class).value();
-                                        if (urlMaping.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
+                                        VerbAction verbAction = new VerbAction(method.getName(), verb);
+                                        Mapping map = new Mapping(className);
+                                        if (urlMaping.containsKey(url)) {
+                                            Mapping existingMap = urlMaping.get(url);
+                                            if (existingMap.getVerbActions().contains(verbAction)) {
+                                                throw new Exception("Duplicate URL: " + url);
+                                            } else {
+                                                existingMap.setVerbActions(verbAction);
+                                            }
                                         } else {
-                                            urlMaping.put(valeur, map);
+                                            map.setVerbActions(verbAction);
+                                            urlMaping.put(url, map);
                                         }
+                                        
+                                    }else{
+                                        throw new Exception("il faut avoir une annotation url dans le controlleur  "+ className);
                                     }
                                 }
+                                
+                                
                             }
                         } catch (Exception e) {
                             e.printStackTrace();
@@ -222,7 +239,7 @@ public class FrontServlet extends HttpServlet {
         } else if (type == boolean.class || type == Boolean.class) {
             return Boolean.parseBoolean(value);
         }
-        // Ajoutez d'autres conversions nécessaires ici
+        // Ajoutez d'autres conversions necessaires ici
         return null;
     }
 
@@ -237,32 +254,32 @@ public class FrontServlet extends HttpServlet {
                 String paramValue = request.getParameter(param.value());
                 parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters are strings for simplicity
             }
-            // Vérifie si le paramètre est annoté avec @RequestObject
+            // Verifie si le paramètre est annote avec @RequestObject
             else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
-                Class<?> parameterType = parameters[i].getType();  // Récupère le type du paramètre (le type de l'objet à créer)
-                Object parameterObject = parameterType.getDeclaredConstructor().newInstance();  // Crée une nouvelle instance de cet objet
+                Class<?> parameterType = parameters[i].getType();  // Recupère le type du paramètre (le type de l'objet à creer)
+                Object parameterObject = parameterType.getDeclaredConstructor().newInstance();  // Cree une nouvelle instance de cet objet
     
                 // Parcourt tous les champs (fields) de l'objet
                 for (Field field : parameterType.getDeclaredFields()) {
                     ParamField param = field.getAnnotation(ParamField.class);
-                    String fieldName = field.getName();  // Récupère le nom du champ
+                    String fieldName = field.getName();  // Recupère le nom du champ
                     if (param == null) {
                         throw new Exception("Etu002635 ,l'attribut " + fieldName +" dans le classe "+parameterObject.getClass().getSimpleName()+" n'a pas d'annotation ParamField "); 
                     }  
                     String paramName = param.value();
-                    String paramValue = request.getParameter(paramName);  // Récupère la valeur du paramètre de la requête
+                    String paramValue = request.getParameter(paramName);  // Recupère la valeur du paramètre de la requête
 
-                    // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la requête)
+                    // Verifie si la valeur du paramètre n'est pas null (si elle est trouvee dans la requête)
                     if (paramValue != null) {
                         Object convertedValue = convertParameter(paramValue, field.getType());  // Convertit la valeur de la requête en type de champ requis
 
                         // Construit le nom du setter
                         String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-                        Method setter = parameterType.getMethod(setterName, field.getType());  // Récupère la méthode setter correspondante
-                        setter.invoke(parameterObject, convertedValue);  // Appelle le setter pour définir la valeur convertie dans le champ de l'objet
+                        Method setter = parameterType.getMethod(setterName, field.getType());  // Recupère la methode setter correspondante
+                        setter.invoke(parameterObject, convertedValue);  // Appelle le setter pour definir la valeur convertie dans le champ de l'objet
                     }
                 }
-                parameterValues[i] = parameterObject;  // Stocke l'objet créé dans le tableau des arguments
+                parameterValues[i] = parameterObject;  // Stocke l'objet cree dans le tableau des arguments
             }else if (parameters[i].isAnnotationPresent(InjectSession.class)) {
                 parameterValues[i] = new CustomSession(request.getSession());
             }

@@ -36,3 +36,7 @@ echo "Fichiers Java compilés dans le répertoire classes"
 # Création du fichier jar
 jar cf "lib/front_Servlet.jar" -C "$MY_CLASSES" .
 echo "Fichier jar créé avec succès."
+
+# Suppression des répertoires temporaires
+rm -r "$TEMP_SRC" "$MY_CLASSES"
+echo "Répertoires temporaires $TEMP_SRC et $MY_CLASSES supprimés."
