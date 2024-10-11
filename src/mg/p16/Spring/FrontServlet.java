@@ -63,83 +63,126 @@ public class FrontServlet extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws Exception {
+        throws Exception {
         StringBuffer requestURL = request.getRequestURL();
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
         PrintWriter out = response.getWriter();
-        response.setContentType("text/html");
-        if (!error.isEmpty()) {
-            out.println(error);
-        } else if (!urlMaping.containsKey(controllerSearched)) {
-            out.println("<p>Aucune methode associee à ce chemin.</p>");
-        } else {
-            try {
-                Mapping mapping = urlMaping.get(controllerSearched);
-                Class<?> clazz = Class.forName(mapping.getClassName());
-                Object object = clazz.getDeclaredConstructor().newInstance();
-                Method method = null;
-                
-                if (!mapping.isVerbPresent(request.getMethod())) {
-                    throw new Exception("Incoherence du verbe HTTP");
-                }
+        int errorCode = 0;
+        String errorMessage = null;
+        String errorDetails = null;
 
-                for (Method m : clazz.getDeclaredMethods()) {
-                    for (VerbAction action : mapping.getVerbActions()) {
-                        if (m.getName().equals(action.getMethodeName()) && action.getVerb().equalsIgnoreCase(request.getMethod())) {
-                            method = m;
-                            break; 
-                        }
-                    }
-                    if (method != null) {
+        response.setContentType("text/html");
+
+        // Erreur de requete invalide
+        if (!error.isEmpty()) {
+            errorCode = 400;
+            errorMessage = "Requete invalide";
+            errorDetails = "La requete est mal formee ou contient des parametres non valides.";
+            displayErrorPage(out, errorCode, errorMessage, errorDetails);
+            return;
+        }
+
+        // Contrôleur non trouve
+        if (!urlMaping.containsKey(controllerSearched)) {
+            errorCode = 404;
+            errorMessage = "Ressource introuvable";
+            errorDetails = "Le chemin specifie ne correspond a aucune ressource disponible.";
+            displayErrorPage(out, errorCode, errorMessage, errorDetails);
+            return;
+        }
+
+        try {
+            Mapping mapping = urlMaping.get(controllerSearched);
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            Object object = clazz.getDeclaredConstructor().newInstance();
+            Method method = null;
+
+            // Methode HTTP non autorisee
+            if (!mapping.isVerbPresent(request.getMethod())) {
+                errorCode = 405;
+                errorMessage = "Methode non autorisee";
+                errorDetails = "La methode HTTP " + request.getMethod() + " n'est pas permise pour cette ressource.";
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
+            }
+
+            // Verification de l'existence de la methode correspondante
+            for (Method m : clazz.getDeclaredMethods()) {
+                for (VerbAction action : mapping.getVerbActions()) {
+                    if (m.getName().equals(action.getMethodeName()) && action.getVerb().equalsIgnoreCase(request.getMethod())) {
+                        method = m;
                         break;
                     }
-                    
                 }
-
-                if (method == null) {
-                    out.println("<p>Aucune methode correspondante trouvee.</p>");
-                    return;
+                if (method != null) {
+                    break;
                 }
-
-                // Inject parameters
-                Object[] parameters = getMethodParameters(method, request);
-                Object returnValue = method.invoke(object, parameters);
-                if (method.isAnnotationPresent(RestApi.class)) {
-                    response.setContentType("application/json");
-                    Gson gson = new Gson();
-                    if (returnValue instanceof String) {
-                        String jsonResponse = gson.toJson(returnValue);
-                        out.println(jsonResponse);
-                    } else if (returnValue instanceof ModelView) {
-                        ModelView modelView = (ModelView) returnValue;
-                        String jsonResponse = gson.toJson(modelView.getData());
-                        out.println(jsonResponse);
-                    } else {
-                        out.println("Type de donnees non reconnu");
-                    }
-                }else{
-                    if (returnValue instanceof String) {
-                        out.println("Methode trouvee dans " + (String) returnValue);
-                    } else if (returnValue instanceof ModelView) {
-                        ModelView modelView = (ModelView) returnValue;
-                        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                            request.setAttribute(entry.getKey(), entry.getValue());
-                        }
-                        RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
-                        dispatcher.forward(request, response);
-                    } else {
-                        out.println("Type de donnees non reconnu");
-                    }
-                }
-            } catch (Exception e) {
-                out.println(e.getMessage());
-            } finally {
-                out.close();
             }
+
+            if (method == null) {
+                errorCode = 404;
+                errorMessage = "Methode introuvable";
+                errorDetails = "Aucune methode appropriee n'a ete trouvee pour traiter la requete.";
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
+            }
+
+            // Execution de la methode trouvee
+            Object[] parameters = getMethodParameters(method, request);
+            Object returnValue = method.invoke(object, parameters);
+
+            // Gerer la reponse selon le type de retour de la methode
+            if (method.isAnnotationPresent(RestApi.class)) {
+                response.setContentType("application/json");
+                Gson gson = new Gson();
+                out.println(gson.toJson(returnValue));
+            } else {
+                if (returnValue instanceof ModelView) {
+                    ModelView modelView = (ModelView) returnValue;
+                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
+                    dispatcher.forward(request, response);
+                } else {
+                    out.println("La methode a renvoye : " + returnValue);
+                }
+            }
+        } catch (Exception e) {
+            errorCode = 500;
+            errorMessage = "Erreur interne du serveur";
+            errorDetails = "Une erreur inattendue s'est produite lors du traitement de votre requete : " + e.getMessage();
+            displayErrorPage(out, errorCode, errorMessage, errorDetails);
         }
     }
+
+    private void displayErrorPage(PrintWriter out, int errorCode, String errorMessage, String errorDetails) {
+        out.println("<!DOCTYPE html>");
+        out.println("<html lang='fr'>");
+        out.println("<head>");
+        out.println("<meta charset='UTF-8'>");
+        out.println("<title>Erreur " + errorCode + "</title>");
+        out.println("<style>");
+        out.println("body { font-family: Arial, sans-serif; color: #333; background-color: #f4f4f4; }");
+        out.println(".container { max-width: 600px; margin: auto; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 4px; }");
+        out.println("h1 { color: #e74c3c; }");
+        out.println("p { line-height: 1.5; }");
+        out.println("a { color: #3498db; text-decoration: none; }");
+        out.println("a:hover { text-decoration: underline; }");
+        out.println("</style>");
+        out.println("</head>");
+        out.println("<body>");
+        out.println("<div class='container'>");
+        out.println("<h1>" + errorMessage + "</h1>");
+        out.println("<p><strong>Code d'erreur :</strong> " + errorCode + "</p>");
+        out.println("<p>" + errorDetails + "</p>");
+        out.println("</div>");
+        out.println("</body>");
+        out.println("</html>");
+    }
+    
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -200,7 +243,7 @@ public class FrontServlet extends HttpServlet {
                                         Mapping map = new Mapping(className);
                                         if (urlMaping.containsKey(url)) {
                                             Mapping existingMap = urlMaping.get(url);
-                                            if (existingMap.getVerbActions().contains(verbAction)) {
+                                            if (existingMap.isVerbAction(verbAction)) {
                                                 throw new Exception("Duplicate URL: " + url);
                                             } else {
                                                 existingMap.setVerbActions(verbAction);
@@ -254,28 +297,28 @@ public class FrontServlet extends HttpServlet {
                 String paramValue = request.getParameter(param.value());
                 parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters are strings for simplicity
             }
-            // Verifie si le paramètre est annote avec @RequestObject
+            // Verifie si le parametre est annote avec @RequestObject
             else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
-                Class<?> parameterType = parameters[i].getType();  // Recupère le type du paramètre (le type de l'objet à creer)
+                Class<?> parameterType = parameters[i].getType();  // Recupere le type du parametre (le type de l'objet a creer)
                 Object parameterObject = parameterType.getDeclaredConstructor().newInstance();  // Cree une nouvelle instance de cet objet
     
                 // Parcourt tous les champs (fields) de l'objet
                 for (Field field : parameterType.getDeclaredFields()) {
                     ParamField param = field.getAnnotation(ParamField.class);
-                    String fieldName = field.getName();  // Recupère le nom du champ
+                    String fieldName = field.getName();  // Recupere le nom du champ
                     if (param == null) {
                         throw new Exception("Etu002635 ,l'attribut " + fieldName +" dans le classe "+parameterObject.getClass().getSimpleName()+" n'a pas d'annotation ParamField "); 
                     }  
                     String paramName = param.value();
-                    String paramValue = request.getParameter(paramName);  // Recupère la valeur du paramètre de la requête
+                    String paramValue = request.getParameter(paramName);  // Recupere la valeur du parametre de la requete
 
-                    // Verifie si la valeur du paramètre n'est pas null (si elle est trouvee dans la requête)
+                    // Verifie si la valeur du parametre n'est pas null (si elle est trouvee dans la requete)
                     if (paramValue != null) {
-                        Object convertedValue = convertParameter(paramValue, field.getType());  // Convertit la valeur de la requête en type de champ requis
+                        Object convertedValue = convertParameter(paramValue, field.getType());  // Convertit la valeur de la requete en type de champ requis
 
                         // Construit le nom du setter
                         String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-                        Method setter = parameterType.getMethod(setterName, field.getType());  // Recupère la methode setter correspondante
+                        Method setter = parameterType.getMethod(setterName, field.getType());  // Recupere la methode setter correspondante
                         setter.invoke(parameterObject, convertedValue);  // Appelle le setter pour definir la valeur convertie dans le champ de l'objet
                     }
                 }
