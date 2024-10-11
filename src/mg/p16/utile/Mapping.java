@@ -39,4 +39,13 @@ public class Mapping {
         return false;
     }
 
+    public boolean isVerbAction(VerbAction verbToCheck) {
+        for (VerbAction action : this.verbActions) {
+            if (action.getVerb().equalsIgnoreCase(verbToCheck.getVerb()) && action.getMethodeName().equalsIgnoreCase(verbToCheck.getMethodeName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 }
