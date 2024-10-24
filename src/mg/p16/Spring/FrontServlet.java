@@ -1,6 +1,9 @@
 package mg.p16.spring;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -16,8 +19,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.google.gson.Gson;
+import jakarta.servlet.http.Part;
 
+import com.google.gson.Gson;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.http.HttpSession;
 
 import jakarta.servlet.ServletConfig;
@@ -40,6 +45,7 @@ import mg.p16.models.ModelView;
 import mg.p16.utile.Mapping;
 import mg.p16.utile.VerbAction;
 
+@MultipartConfig
 public class FrontServlet extends HttpServlet {
     private String packageName; // Variable pour stocker le nom du package
     private static List<String> controllerNames = new ArrayList<>();
@@ -295,7 +301,28 @@ public class FrontServlet extends HttpServlet {
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
                 String paramValue = request.getParameter(param.value());
-                parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters are strings for simplicity
+                if(parameters[i].getType().equals(Part.class)){
+                    Part filePart = request.getPart(param.value()); 
+                    String fileName = filePart.getSubmittedFileName();
+                    String filePath = "D:/ITU/S4/Mr_Naina/files_Upload/" + fileName;
+            
+                    // Enregistrer le fichier sur le serveur
+                    try (InputStream fileContent = filePart.getInputStream();
+                         FileOutputStream fos = new FileOutputStream(new File(filePath))) {
+                         
+                        byte[] buffer = new byte[1024];
+                        int bytesRead;
+                        
+                        while ((bytesRead = fileContent.read(buffer)) != -1) {
+                            fos.write(buffer, 0, bytesRead);
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    parameterValues[i] = filePart;
+                }else{
+                    parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters are strings for simplicity
+                }
             }
             // Verifie si le parametre est annote avec @RequestObject
             else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
