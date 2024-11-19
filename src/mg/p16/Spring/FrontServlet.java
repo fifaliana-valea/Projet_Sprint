@@ -34,11 +34,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.p16.annotations.Annotation_Get;
 import mg.p16.annotations.Annotation_Post;
 import mg.p16.annotations.Annotation_controlleur;
+import mg.p16.annotations.DoubleType;
 import mg.p16.annotations.InjectSession;
+import mg.p16.annotations.IntType;
+import mg.p16.annotations.NotNull;
 import mg.p16.annotations.Param;
 import mg.p16.annotations.ParamField;
 import mg.p16.annotations.ParamObject;
 import mg.p16.annotations.RestApi;
+import mg.p16.annotations.StringType;
 import mg.p16.annotations.Url;
 import mg.p16.models.CustomSession;
 import mg.p16.models.ModelView;
@@ -275,6 +279,39 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
+    private void validateField(Field field, String paramValue) throws Exception {
+        // Vérifier si le champ est annoté avec @NotNull
+        if (field.isAnnotationPresent(NotNull.class) && (paramValue == null || paramValue.isEmpty())) {
+            throw new Exception("Le champ " + field.getName() + " ne doit pas être nul.");
+        }
+
+        // Vérifier le type Double
+        if (field.isAnnotationPresent(DoubleType.class)) {
+            try {
+                Double.parseDouble(paramValue);
+            } catch (NumberFormatException e) {
+                throw new Exception("Le champ " + field.getName() + " doit être de type double.");
+            }
+        }
+
+        // Vérifier le type Int
+        if (field.isAnnotationPresent(IntType.class)) {
+            try {
+                Integer.parseInt(paramValue);
+            } catch (NumberFormatException e) {
+                throw new Exception("Le champ " + field.getName() + " doit être de type int.");
+            }
+        }
+
+        // Vérifier le type String
+        if (field.isAnnotationPresent(StringType.class)) {
+            if (!(paramValue instanceof String)) {
+                throw new Exception("Le champ " + field.getName() + " doit être de type String.");
+            }
+        }
+    }
+
+
   public static Object convertParameter(String value, Class<?> type) {
         if (value == null) {
             return null;
@@ -337,17 +374,18 @@ public class FrontServlet extends HttpServlet {
                         throw new Exception("Etu002635 ,l'attribut " + fieldName +" dans le classe "+parameterObject.getClass().getSimpleName()+" n'a pas d'annotation ParamField "); 
                     }  
                     String paramName = param.value();
-                    String paramValue = request.getParameter(paramName);  // Recupere la valeur du parametre de la requete
-
+                    String paramValue = request.getParameter(paramName);  // Recupere la valeur du parametre de la requete                      
+                    
                     // Verifie si la valeur du parametre n'est pas null (si elle est trouvee dans la requete)
                     if (paramValue != null) {
+                        validateField(field, paramValue); 
                         Object convertedValue = convertParameter(paramValue, field.getType());  // Convertit la valeur de la requete en type de champ requis
-
+                        
                         // Construit le nom du setter
                         String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
                         Method setter = parameterType.getMethod(setterName, field.getType());  // Recupere la methode setter correspondante
                         setter.invoke(parameterObject, convertedValue);  // Appelle le setter pour definir la valeur convertie dans le champ de l'objet
-                    }
+                    }                                                   
                 }
                 parameterValues[i] = parameterObject;  // Stocke l'objet cree dans le tableau des arguments
             }else if (parameters[i].isAnnotationPresent(InjectSession.class)) {
