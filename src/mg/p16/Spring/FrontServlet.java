@@ -35,8 +35,8 @@ public class FrontServlet extends HttpServlet {
             }
             // Scanne les contrôleurs dans le package
             System.out.println("n of controller: " + controllerNames.size());
-            utile.scanControllers(packageName, controllerNames, urlMaping);
-            urlMaping = Fonction.getUrlMapping(controllerNames);
+            utile.scanControllers(packageName, controllerNames);
+            Fonction.getUrlMapping(controllerNames,urlMaping);
         } catch (Exception e) {
             e.printStackTrace();
         }

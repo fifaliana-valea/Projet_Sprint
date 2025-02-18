@@ -34,8 +34,7 @@ import mg.p16.utile.VerbAction;
 
 public class Fonction {
 
-    public void scanControllers(String packageName, ArrayList<Class<?>> controllerNames,
-            HashMap<String, Mapping> urlMaping) throws Exception {
+    public void scanControllers(String packageName, ArrayList<Class<?>> controllerNames) throws Exception {
         try {
             // Charger le package et parcourir les classes
             ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -57,7 +56,6 @@ public class Fonction {
                             if (clazz.isAnnotationPresent(mg.p16.annotations.Annotation.Controlleur.class)
                                     && !Modifier.isAbstract(clazz.getModifiers())) {
                                 controllerNames.add(clazz);
-
                             }
                         } catch (Exception e) {
                             e.printStackTrace();
@@ -68,62 +66,61 @@ public class Fonction {
         }
     }
 
-    public static HashMap<String, Mapping> getUrlMapping(ArrayList<Class<?>> controllers)
+    public static void getUrlMapping(ArrayList<Class<?>> controllers, HashMap<String, Mapping> urlMapping)
             throws CustomException.BuildException {
-        HashMap<String, Mapping> urlMapping = new HashMap<>();
-        boolean classAnnotedAUth = false;
-        String profil = "";
         for (Class<?> clazz : controllers) {
-
-            if (clazz.isAnnotationPresent(mg.p16.annotations.Annotation.Auth.class)) {
-                classAnnotedAUth = true;
-                profil = clazz.getAnnotation(mg.p16.annotations.Annotation.Auth.class).value();
-            }
+            boolean classAnnotatedAuth = clazz.isAnnotationPresent(mg.p16.annotations.Annotation.Auth.class);
+            String classProfile = classAnnotatedAuth
+                    ? clazz.getAnnotation(mg.p16.annotations.Annotation.Auth.class).value()
+                    : "";
 
             Method[] methods = clazz.getDeclaredMethods();
             for (Method method : methods) {
-
                 if (method.isAnnotationPresent(mg.p16.annotations.Annotation.Url.class)) {
                     String url = method.getAnnotation(mg.p16.annotations.Annotation.Url.class).value();
+                    String verb = method.isAnnotationPresent(mg.p16.annotations.Annotation.Post.class) ? "POST" : "GET";
+
                     VerbAction verbAction = new VerbAction();
                     verbAction.setMethodeName(method.getName());
-                    verbAction.setVerb(
-                            method.isAnnotationPresent(mg.p16.annotations.Annotation.Post.class) ? "POST" : "GET");
+                    verbAction.setVerb(verb);
 
                     if (!urlMapping.containsKey(url)) {
                         Mapping mapping = new Mapping();
-
-                        if (classAnnotedAUth) {
-                            mapping.setNeedAuth(true);
-                            mapping.setProfil(profil);
-                        }
-
-                        if (method.isAnnotationPresent(mg.p16.annotations.Annotation.Auth.class)) {
-
-                            if (classAnnotedAUth) {
-                                throw new CustomException.BuildException(
-                                        clazz.getName() + " is already annoted Auth , remove @Auth on method");
-                            }
-
-                            profil = method.getAnnotation(mg.p16.annotations.Annotation.Auth.class).value();
-                            mapping.setNeedAuth(true);
-                            mapping.setProfil(profil);
-                        }
-
                         mapping.setClassName(clazz.getName());
                         mapping.setVerbActions(new ArrayList<>());
                         mapping.getVerbActions().add(verbAction);
+
+                        if (classAnnotatedAuth) {
+                            mapping.setNeedAuth(true);
+                            mapping.setProfil(classProfile);
+                        }
+
+                        if (method.isAnnotationPresent(mg.p16.annotations.Annotation.Auth.class)) {
+                            if (classAnnotatedAuth) {
+                                throw new CustomException.BuildException("La classe " + clazz.getName()
+                                        + " est deja annotee avec @Auth, veuillez supprimer @Auth sur la methode "
+                                        + method.getName());
+                            }
+                            mapping.setNeedAuth(true);
+                            mapping.setProfil(method.getAnnotation(mg.p16.annotations.Annotation.Auth.class).value());
+                        }
+
                         urlMapping.put(url, mapping);
                     } else {
                         Mapping existingMapping = urlMapping.get(url);
+                        boolean verbExists = existingMapping.getVerbActions().stream()
+                                .anyMatch(v -> v.getVerb().equals(verb));
+
+                        if (verbExists) {
+                            throw new CustomException.BuildException(
+                                    "Duplication de verbe detectee pour l'URL : " + url + " avec le verbe " + verb);
+                        }
+
                         existingMapping.getVerbActions().add(verbAction);
                     }
-
                 }
             }
-            classAnnotedAUth = false;
         }
-        return urlMapping;
     }
 
     private static Object convertParameter(String value, Class<?> type) {
@@ -167,7 +164,7 @@ public class Fonction {
                     field.set(paramObject, typedValue);
                 }
             } else {
-                // Vérifier si l'objet imbriqué a des paramètres dans la requête
+                // Verifier si l'objet imbrique a des paramètres dans la requête
                 boolean hasNestedValues = request.getParameterMap().keySet().stream()
                         .anyMatch(key -> key.startsWith(fullParamName + "."));
 
@@ -237,7 +234,7 @@ public class Fonction {
 
     public static MethodParamResult getMethodParameters(Method method, HttpServletRequest request) throws Exception {
         Parameter[] parameters = method.getParameters();
-        Object[] parameterValues = new Object[parameters.length];
+        Object[] methodParams = new Object[parameters.length];
         Map<String, String> errorMap = new HashMap<>();
         Map<String, Object> valueMap = new HashMap<>();
 
@@ -246,8 +243,7 @@ public class Fonction {
             if (parameters[i].isAnnotationPresent(mg.p16.annotations.Annotation.Param.class)) {
                 paramName = parameters[i].getAnnotation(mg.p16.annotations.Annotation.Param.class).value();
             } else {
-                throw new Exception(
-                        "Etu002635 ,le parametre " + parameters[i].getName() + " n'a pas d'annotation Param ");
+                throw new Exception("ETU2597");
             }
 
             Class<?> paramType = parameters[i].getType();
@@ -255,26 +251,26 @@ public class Fonction {
             if (!isSimpleType(paramType)) {
                 try {
                     Object paramObject = createAndPopulateObject(paramType, paramName, request);
-                    parameterValues[i] = paramObject;
+                    methodParams[i] = paramObject;
 
                 } catch (Exception e) {
                     throw new IllegalArgumentException(
-                            "Error de la creation du parametre d'object: " + paramName, e);
+                            "Error creating parameter object: " + paramName, e);
                 }
             } else if (paramType.equals(CustomSession.class)) {
-                parameterValues[i] = new CustomSession(request.getSession());
+                methodParams[i] = new CustomSession(request.getSession());
             } else if (paramType.equals(FileUpload.class)) {
-                parameterValues[i] = FileUpload.handleFileUpload(request, paramName);
+                methodParams[i] = FileUpload.handleFileUpload(request, paramName);
             } else {
                 String paramValue = request.getParameter(paramName);
                 if (paramValue == null) {
-                    throw new IllegalArgumentException("Abscence du  parametre " + paramName);
+                    throw new IllegalArgumentException("Missing parameter " + paramName);
                 }
-                parameterValues[i] = convertParameter(paramValue, paramType);
+                methodParams[i] = convertParameter(paramValue, paramType);
             }
 
             if (parameters[i].isAnnotationPresent(mg.p16.annotations.Annotation.Valid.class)) {
-                List<ResponseValidation> errors = Contraintes.validateObject(parameterValues[i]);
+                List<ResponseValidation> errors = Contraintes.validateObject(methodParams[i]);
                 for (ResponseValidation responseValidation : errors) {
                     if (!responseValidation.getErrors().isEmpty()) {
                         errorMap.put("error_" + responseValidation.getInputName(),
@@ -284,17 +280,18 @@ public class Fonction {
                     }
                 }
             } else {
-                List<ResponseValidation> errors = Contraintes.valider(parameterValues[i],
+                List<ResponseValidation> errors = Contraintes.valider(methodParams[i],
                         parameters[i].getAnnotations(),
                         paramName);
                 if (!errors.get(0).getErrors().isEmpty()) {
                     errorMap.put("error_" + paramName, String.join(", ", errors.get(0).getErrors()));
-                    valueMap.put("value_" + paramName, parameterValues[i]);
+                    valueMap.put("value_" + paramName, methodParams[i]);
                 }
             }
         }
 
-        return new MethodParamResult(parameterValues, errorMap, valueMap);
+        return new MethodParamResult(methodParams, errorMap, valueMap);
+
     }
 
     public static void sendModelView(ModelView modelView, HttpServletRequest request, HttpServletResponse response)
@@ -337,49 +334,50 @@ public class Fonction {
     }
 
     public static String removeRootSegment(String url) {
-        int firstSlashIndex = url.indexOf('/');
-        if (firstSlashIndex != -1) {
-            int secondSlashIndex = url.indexOf('/', firstSlashIndex + 1);
-            if (secondSlashIndex != -1) {
-                return url.substring(secondSlashIndex);
-            } else {
-                return "/";
+        String[] segments = url.split("/");
+        if (segments.length > 2) {
+            StringBuilder newUrl = new StringBuilder();
+            for (int i = 2; i < segments.length; i++) {
+                newUrl.append("/").append(segments[i]);
             }
+            return newUrl.toString();
         }
-        return url;
+        return "/";
     }
 
     public static boolean isRoot(String url) {
         return url.trim().length() == 1;
     }
 
-    public static void checkAuthProfil(Mapping mapping,HttpServletRequest req,String hote_name)throws CustomException.RequestException{
+    public static void checkAuthProfil(Mapping mapping, HttpServletRequest req, String hote_name)
+            throws CustomException.RequestException {
         String hote = "hote";
-        if(hote_name != null && hote_name != ""){
+        if (hote_name != null && hote_name != "") {
             hote = hote_name;
         }
-        
+
         if (mapping.isNeedAuth()) {
-            if(!mapping.getProfil().equals(req.getSession().getAttribute(hote))){
+            if (!mapping.getProfil().equals(req.getSession().getAttribute(hote))) {
                 throw new CustomException.RequestException("unauthorize");
             }
         }
     }
 
-    public static ResponsePage processUrl(HashMap<String, Mapping> urlMapping, PrintWriter out, HttpServletRequest req, HttpServletResponse res, ArrayList<Class<?>> controleurs,String hote_name){
+    public static ResponsePage processUrl(HashMap<String, Mapping> urlMapping, PrintWriter out, HttpServletRequest req,
+            HttpServletResponse res, ArrayList<Class<?>> controleurs, String hote_name) {
         Object urlValue = null;
         boolean trouve = false;
         String html = "";
         String url = Fonction.removeRootSegment(req.getRequestURI());
-        
+
         try {
             html += Fonction.header(url, controleurs);
-    
+
             for (Map.Entry<String, Mapping> entree : urlMapping.entrySet()) {
                 String cle = entree.getKey();
                 Mapping valeur = entree.getValue();
                 try {
-                    checkAuthProfil(valeur,req,hote_name);
+                    checkAuthProfil(valeur, req, hote_name);
                 } catch (CustomException.RequestException e) {
                     return new ResponsePage(new StatusCode(401, "unauthorize", false, e.getMessage()), html);
                 }
@@ -392,16 +390,18 @@ public class Fonction {
                             break;
                         }
                     }
-    
+
                     if (matchingVerbe != null) {
                         StatusCode processR = processRequest(req, valeur);
                         if (processR != null) {
                             return new ResponsePage(processR, html);
                         }
                         try {
-                            urlValue = Fonction.getValueMethod(matchingVerbe.getMethodeName(), req, res, valeur.getClassName(), url);
-                            
-                            html += "<BIG><p>URLMAPPING:</BIG>" + valeur.getClassName() + "_" + matchingVerbe.getMethodeName() + "</p>";
+                            urlValue = Fonction.getValueMethod(matchingVerbe.getMethodeName(), req, res,
+                                    valeur.getClassName(), url);
+
+                            html += "<BIG><p>URLMAPPING:</BIG>" + valeur.getClassName() + "_"
+                                    + matchingVerbe.getMethodeName() + "</p>";
                             html += "</br>";
                             html += "<BIG><p>MethodeValue:</BIG>";
                             html += urlValue;
@@ -415,25 +415,29 @@ public class Fonction {
                             } else {
                                 Class<?> cls = Class.forName(valeur.getClassName());
                                 return new ResponsePage(new StatusCode(500, "internal server error", false,
-                                    "Impossible d'obtenir la valeur pour le type " 
-                                    + urlValue.getClass() 
-                                    + " dans la méthode " + matchingVerbe.getMethodeName() 
-                                    + "\n à " + valeur.getClassName() + "." 
-                                    + matchingVerbe.getMethodeName() + "(" + cls.getSimpleName() + ".java)"), html);
+                                        "Impossible d'obtenir la valeur pour le type "
+                                                + urlValue.getClass()
+                                                + " dans la methode " + matchingVerbe.getMethodeName()
+                                                + "\n a " + valeur.getClassName() + "."
+                                                + matchingVerbe.getMethodeName() + "(" + cls.getSimpleName()
+                                                + ".java)"),
+                                        html);
                             }
                             trouve = true;
                         } catch (Exception e) {
-                            return new ResponsePage(new StatusCode(500, "internal server error", false, e.getMessage()), html);
+                            return new ResponsePage(new StatusCode(500, "internal server error", false, e.getMessage()),
+                                    html);
                         }
                     }
                     break;
                 }
             }
-            
+
             if (!Fonction.isRoot(url) && !trouve) {
-                return new ResponsePage(new StatusCode(404, "url not found", false, "could not find " + req.getRequestURI()), html);
+                return new ResponsePage(
+                        new StatusCode(404, "url not found", false, "could not find " + req.getRequestURI()), html);
             }
-            
+
             return new ResponsePage(new StatusCode(200, true), html);
         } catch (Exception e) {
             return new ResponsePage(new StatusCode(500, "internal server error", false, e.getMessage()), html);
