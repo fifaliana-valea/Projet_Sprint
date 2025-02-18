@@ -7,11 +7,11 @@ public class Mapping {
     
     private String className;
     private List<VerbAction> verbActions;
+    private boolean needAuth=false;
+    private String profil;
     
- 
-    public Mapping(String className) {
+    public void setClassName(String className) {
         this.className = className;
-        this.verbActions =new ArrayList<>();
     }
 
     public String getClassName() {
@@ -48,4 +48,19 @@ public class Mapping {
         return false;
     }
 
+    public void setNeedAuth(boolean needAuth) {
+        this.needAuth = needAuth;
+    }
+        
+    public boolean isNeedAuth() {
+        return needAuth;
+    }
+
+    public void setProfil(String profil) {
+        this.profil = profil;
+    }
+
+    public String getProfil() {
+        return profil;
+    }
 }
