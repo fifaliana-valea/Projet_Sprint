@@ -8,6 +8,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -22,7 +23,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
 import mg.p16.annotations.Contraintes;
-
 import mg.p16.annotations.ResponseValidation;
 import mg.p16.models.CustomException;
 import mg.p16.models.CustomSession;
@@ -127,7 +127,7 @@ public class Fonction {
                     if (classAnnotedAuth) {
                         throw new CustomException(401,
                                 "Conflit d'annotations", clazz.getName()
-                                        + " est dejà annote avec @Auth, veuillez retirer @Auth de la methode.");
+                                        + " est deja annote avec @Auth, veuillez retirer @Auth de la methode.");
                     }
                     profil = method.getAnnotation(mg.p16.annotations.Annotation.Auth.class).value();
                     map.setNeedAuth(true);
@@ -198,7 +198,7 @@ public class Fonction {
                     setter.invoke(paramObject, convertedValue);
                     String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
                     Method getterMethod = paramType.getMethod(getterName);
-                    Object fieldValues = getterMethod.invoke(paramObject); // objetInstance doit être l'objet dont tu
+                    Object fieldValues = getterMethod.invoke(paramObject); // objetInstance doit etre l'objet dont tu
                                                                            // veux recuperer les valeurs
 
                     System.out.println(
@@ -304,12 +304,11 @@ public class Fonction {
             System.out.println("le profile est " + profil);
 
             if (profil == null || profil.isEmpty()) {
-                request.setAttribute("errors_auth", "Vous devez etre authentifie pour acceder a cette ressource.");
-                System.out.println(
-                        "Tentative d'acces sans authentification. Redirection vers la page d'authentification,avec url_auth : "
-                                + url_auth);
-                RequestDispatcher dispatch = request.getRequestDispatcher(url_auth);
-                dispatch.forward(request, response);
+                String errorMessage = "Vous devez etre authentifie pour acceder a cette ressource.";
+                String redirectUrl = url_auth + "?errors_auth=" + URLEncoder.encode(errorMessage, "UTF-8");
+
+                System.out.println("Tentative d'acces sans authentification. Redirection vers : " + redirectUrl);
+                response.sendRedirect(redirectUrl);
                 return;
             }
 
@@ -320,7 +319,7 @@ public class Fonction {
                         401,
                         "Acces non autorise",
                         "L'utilisateur " + profil + " ne possede pas le profil requis ('" + mapping.getProfil()
-                                + "') pour acceder à cette ressource.");
+                                + "') pour acceder a cette ressource.");
 
             }
         }
