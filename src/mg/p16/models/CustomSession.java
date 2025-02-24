@@ -1,7 +1,5 @@
 package mg.p16.models;
 
-import java.util.HashMap;
-
 import jakarta.servlet.http.HttpSession;
 
 public class CustomSession {
@@ -10,6 +8,7 @@ public class CustomSession {
     public CustomSession(HttpSession session) {
         this.session = session;
     }
+    
 
     public void add(String key, Object value) {
         session.setAttribute(key, value);
