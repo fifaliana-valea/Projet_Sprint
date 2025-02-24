@@ -4,11 +4,6 @@ public class VerbAction {
     private String methodeName;
     private String verb;
 
-    public VerbAction(String methodeName, String verb) {
-        this.methodeName = methodeName;
-        this.verb = verb;
-    }
-
     public String getMethodeName() {
         return methodeName;
     }
