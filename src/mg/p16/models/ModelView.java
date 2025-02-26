@@ -8,11 +8,16 @@ public class ModelView {
     private HashMap<String, Object> data;
     private Map<String, String> validationErrors = new HashMap<>();
     private Map<String, Object> validationValues = new HashMap<>();
-
+    
     public ModelView(String url) {
         this.url = url;
         this.data = new HashMap<>();
     }
+    
+    public void setUrl(String url) {
+        this.url = url;
+    }
+    public ModelView(){}
 
     public void addObject(String name, Object value) {
         data.put(name, value);
