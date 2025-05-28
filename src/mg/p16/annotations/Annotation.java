@@ -41,6 +41,7 @@ public interface Annotation {
     @Retention(RetentionPolicy.RUNTIME)
     @Target({ ElementType.PARAMETER, ElementType.FIELD })
     public @interface Valid {
+        String value();
     }
 
     @Retention(RetentionPolicy.RUNTIME)

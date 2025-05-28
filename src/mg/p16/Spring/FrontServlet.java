@@ -52,7 +52,7 @@ public class FrontServlet extends HttpServlet {
         Fonction.getValueMethod(request, response, urlMapping, hostName, out, urlAuth);
     }
 
-    @Override
+    @Override 
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {

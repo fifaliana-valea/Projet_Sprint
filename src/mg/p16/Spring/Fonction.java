@@ -3,12 +3,20 @@ package mg.p16.Spring;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.sql.Timestamp;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -20,6 +28,7 @@ import com.google.gson.Gson;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
 import mg.p16.annotations.Contraintes;
@@ -31,6 +40,7 @@ import mg.p16.utile.FileUpload;
 import mg.p16.utile.Mapping;
 import mg.p16.utile.MethodParamResult;
 import mg.p16.utile.VerbAction;
+import java.util.Date;
 
 public class Fonction {
 
@@ -150,26 +160,193 @@ public class Fonction {
         }
     }
 
+    private static Object getDefaultValue(Class<?> type) {
+        if (type.isPrimitive()) {
+            if (type == boolean.class)
+                return false;
+            if (type == char.class)
+                return '\0';
+            if (type == byte.class || type == short.class || type == int.class ||
+                    type == long.class || type == float.class || type == double.class) {
+                return 0;
+            }
+        }
+
+        // Ajout des types communs
+        if (type == String.class)
+            return "";
+        if (type == LocalDate.class)
+            return LocalDate.MIN;
+        if (type == LocalDateTime.class)
+            return LocalDateTime.MIN;
+        if (type == Timestamp.class)
+            return new Timestamp(0);
+
+        return null;
+    }
+
     public static Object convertParameter(String value, Class<?> type) {
-        if (value == null) {
-            return null;
+        if (value == null || value.trim().isEmpty()) {
+            return getDefaultValue(type);
         }
-        if (type == String.class) {
-            return value;
-        } else if (type == int.class || type == Integer.class) {
-            return Integer.parseInt(value);
-        } else if (type == long.class || type == Long.class) {
-            return Long.parseLong(value);
-        } else if (type == boolean.class || type == Boolean.class) {
-            return Boolean.parseBoolean(value);
+
+        try {
+            if (type == String.class) {
+                return value;
+            } else if (type == int.class || type == Integer.class) {
+                return Integer.parseInt(value);
+            } else if (type == long.class || type == Long.class) {
+                return Long.parseLong(value);
+            } else if (type == boolean.class || type == Boolean.class) {
+                return Boolean.parseBoolean(value);
+            } else if (type == double.class || type == Double.class) {
+                return Double.parseDouble(value);
+            } else if (type == float.class || type == Float.class) {
+                return Float.parseFloat(value);
+            } else if (type == byte.class || type == Byte.class) {
+                return Byte.parseByte(value);
+            } else if (type == short.class || type == Short.class) {
+                return Short.parseShort(value);
+            } else if (type == char.class || type == Character.class) {
+                return value.length() > 0 ? value.charAt(0) : '\0';
+            } else if (type == LocalDate.class) {
+                return parseLocalDate(value);
+            } else if (type == LocalDateTime.class) {
+                return parseLocalDateTime(value);
+            } else if (type == Timestamp.class) {
+                return parseTimestamp(value);
+            }
+        } catch (NumberFormatException | DateTimeParseException e) {
+            throw new IllegalArgumentException(
+                    "Conversion error for value: " + value + " to type: " + type.getSimpleName(), e);
         }
-        // Ajoutez d'autres conversions necessaires ici
+
+        throw new UnsupportedOperationException("Type not supported: " + type.getName());
+    }
+
+    private static LocalDate parseLocalDate(String value) {
+        // Essaye les formats communs dans l'ordre
+        String[] patterns = {
+                "yyyy-MM-dd",
+                "dd/MM/yyyy",
+                "MM/dd/yyyy",
+                "yyyyMMdd"
+        };
+
+        for (String pattern : patterns) {
+            try {
+                return LocalDate.parse(value, DateTimeFormatter.ofPattern(pattern));
+            } catch (DateTimeParseException ignored) {
+                // Passer au format suivant
+            }
+        }
+        throw new DateTimeParseException("Failed to parse date: " + value, value, 0);
+    }
+
+    private static LocalDateTime parseLocalDateTime(String value) {
+        // Essaye les formats communs dans l'ordre
+        String[] patterns = {
+                "yyyy-MM-dd'T'HH:mm",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd HH:mm:ss",
+                "dd/MM/yyyy HH:mm",
+                "dd/MM/yyyy HH:mm:ss"
+        };
+
+        for (String pattern : patterns) {
+            try {
+                return LocalDateTime.parse(value, DateTimeFormatter.ofPattern(pattern));
+            } catch (DateTimeParseException ignored) {
+                // Passer au format suivant
+            }
+        }
+        throw new DateTimeParseException("Failed to parse datetime: " + value, value, 0);
+    }
+
+    private static Timestamp parseTimestamp(String value) {
+        try {
+            // Essaye le format standard en premier
+            return Timestamp.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            try {
+                // Essaye avec LocalDateTime
+                LocalDateTime ldt = parseLocalDateTime(value);
+                return Timestamp.valueOf(ldt);
+            } catch (DateTimeParseException e2) {
+                try {
+                    // Essaye avec les anciens formats Date
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                    Date date = sdf.parse(value);
+                    return new Timestamp(date.getTime());
+                } catch (ParseException e3) {
+                    throw new IllegalArgumentException("Failed to parse timestamp: " + value, e3);
+                }
+            }
+        }
+    }
+
+    // Check if the parameter type is an array
+    private static boolean isObjectArray(Class<?> paramType) {
+        return paramType.isArray();
+    }
+
+    private static Object convertToObjectArray(String paramValue, Class<?> paramType) throws Exception {
+        if (paramType.isArray()) {
+            // Split the values by commas
+            String[] values = paramValue.split(","); // Assuming values are comma-separated in the request
+
+            // Check if the component type is primitive (e.g., int[], double[], etc.)
+            Class<?> componentType = paramType.getComponentType();
+
+            if (componentType.isPrimitive()) {
+                // If it's a primitive type, we create an array of the corresponding primitive
+                // type
+                if (componentType == int.class) {
+                    int[] array = new int[values.length];
+                    for (int i = 0; i < values.length; i++) {
+                        array[i] = Integer.parseInt(values[i].trim());
+                    }
+                    return array;
+                } else if (componentType == double.class) {
+                    double[] array = new double[values.length];
+                    for (int i = 0; i < values.length; i++) {
+                        array[i] = Double.parseDouble(values[i].trim());
+                    }
+                    return array;
+                } else if (componentType == long.class) {
+                    long[] array = new long[values.length];
+                    for (int i = 0; i < values.length; i++) {
+                        array[i] = Long.parseLong(values[i].trim());
+                    }
+                    return array;
+                } else if (componentType == boolean.class) {
+                    boolean[] array = new boolean[values.length];
+                    for (int i = 0; i < values.length; i++) {
+                        array[i] = Boolean.parseBoolean(values[i].trim());
+                    }
+                    return array;
+                }
+                // Add more primitive types if necessary (e.g., float, short, etc.)
+            } else {
+                // If it's not a primitive, assume it's an object array (e.g., String[],
+                // Integer[], etc.)
+                Object[] array = (Object[]) Array.newInstance(componentType, values.length);
+                for (int i = 0; i < values.length; i++) {
+                    array[i] = convertParameter(values[i].trim(), componentType);
+                }
+                return array;
+            }
+        }
         return null;
     }
 
     private static boolean isSimpleType(Class<?> type) {
         return type.isPrimitive() ||
                 type.equals(String.class) ||
+                type.equals(Timestamp.class) ||
+                type.equals(LocalDate.class) ||
+                type.equals(LocalDateTime.class) ||
                 type.equals(FileUpload.class) ||
                 type.equals(Integer.class) ||
                 type.equals(Long.class) ||
@@ -179,6 +356,13 @@ public class Fonction {
                 type.equals(Boolean.class);
     }
 
+    private static String capitalize(String str) {
+        if (str == null || str.isEmpty()) {
+            return str;
+        }
+        return Character.toUpperCase(str.charAt(0)) + str.substring(1);
+    }
+
     private static Object createAndPopulateObject(Class<?> paramType, String paramName, HttpServletRequest request)
             throws Exception {
         Object paramObject = paramType.getDeclaredConstructor().newInstance();
@@ -186,49 +370,44 @@ public class Fonction {
 
         for (Field field : fields) {
             String fieldName = field.getName();
-            field.setAccessible(true);
+            String fullParamName = paramName + "." + fieldName;
+            System.out.println("Processing field: " + fullParamName);
 
             try {
-                if (isSimpleType(field.getType())) {
-                    String fieldValue = request.getParameter(fieldName);
-                    Object convertedValue = (fieldValue != null) ? convertParameter(fieldValue, field.getType())
-                            : getDefaultValue(field.getType());
-                    String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-                    Method setter = paramType.getMethod(setterName, field.getType());
-                    setter.invoke(paramObject, convertedValue);
-                    String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-                    Method getterMethod = paramType.getMethod(getterName);
-                    Object fieldValues = getterMethod.invoke(paramObject); // objetInstance doit etre l'objet dont tu
-                                                                           // veux recuperer les valeurs
+                field.setAccessible(true); // Permet de modifier un champ privé
 
-                    System.out.println(
-                            String.format("La valeur de %s dans createAndPopulateObject : %s", fieldValue,
-                                    fieldValues));
+                if (isSimpleType(field.getType())) {
+                    // Cas des types primitifs (int, String, Date, etc.)
+                    String fieldValue = request.getParameter(fullParamName);
+                    Object convertedValue = (fieldValue != null)
+                            ? convertParameter(fieldValue, field.getType())
+                            : getDefaultValue(field.getType());
+
+                    field.set(paramObject, convertedValue);
+                    System.out.println(String.format("Valeur de %s : %s", fullParamName, convertedValue));
 
                 } else {
-                    Object nestedObject = createAndPopulateObject(field.getType(), fieldName, request);
-                    field.set(paramObject, nestedObject);
+                    // Cas des objets imbriqués (ex: Ville, Avion)
+                    String idFieldParam = fullParamName + ".id" + capitalize(field.getType().getSimpleName());
+                    String idValue = request.getParameter(idFieldParam);
+
+                    if (idValue != null) { // Si l'ID est présent, on crée l'objet imbriqué
+                        Object nestedObject = field.getType().getDeclaredConstructor().newInstance();
+                        Field idField = field.getType()
+                                .getDeclaredField("id" + capitalize(field.getType().getSimpleName()));
+                        idField.setAccessible(true);
+                        idField.set(nestedObject, convertParameter(idValue, idField.getType()));
+
+                        field.set(paramObject, nestedObject);
+                        System.out.println("Objet imbriqué " + fieldName + " créé avec ID : " + idValue);
+                    }
                 }
             } catch (Exception e) {
-                // Continue setting even if an exception occurs
-                field.set(paramObject, getDefaultValue(field.getType()));
+                System.err.println("Erreur lors de l'affectation de " + fullParamName + " : " + e.getMessage());
             }
         }
 
         return paramObject;
-    }
-
-    private static Object getDefaultValue(Class<?> type) {
-        if (type.isPrimitive()) {
-            if (type == boolean.class)
-                return false;
-            if (type == char.class)
-                return '\0';
-            if (type == byte.class || type == short.class || type == int.class || type == long.class ||
-                    type == float.class || type == double.class)
-                return 0;
-        }
-        return null;
     }
 
     public static MethodParamResult getMethodParameters(Method method, HttpServletRequest request) throws Exception {
@@ -265,9 +444,46 @@ public class Fonction {
                 if (!errors.isEmpty() && !errors.get(0).getErrors().isEmpty()) {
                     errorMap.put("error_" + paramAnnotation.value(), String.join(", ", errors.get(0).getErrors()));
                 }
+            } else if (isObjectArray(paramType)) {
+                // Récupération de l'annotation @Param
+                mg.p16.annotations.Annotation.Param paramAnnotation = param
+                        .getAnnotation(mg.p16.annotations.Annotation.Param.class);
+                if (paramAnnotation == null) {
+                    throw new Exception("Etu002635 : le paramètre " + param.getName() + " dans " + method.getName()
+                            + " doit avoir une annotation @Param");
+                }
+
+                paramValue = paramAnnotation.value();
+                String valeurs = request.getParameter(paramValue);
+                System.out.println("le valeur de l'objet est : " + valeurs);
+
+                // Convertir en tableau Object[] ou tableau primitif
+                Object array = convertToObjectArray(valeurs, paramType);
+
+                if (array != null) {
+                    Class<?> componentType = paramType.getComponentType();
+
+                    // Si le type est primitif (ex: double[], int[], etc.)
+                    if (componentType.isPrimitive()) {
+                        // On a déjà un tableau primitif (par exemple int[], double[])
+                        parameterValues[i] = array;
+                    } else {
+                        // Si ce n'est pas un type primitif, on peut copier normalement dans un tableau
+                        // typé
+                        Object[] objectArray = (Object[]) array; // cast to Object[] since convertToObjectArray returns
+                                                                 // Object[]
+                        Object typedArray = Array.newInstance(componentType, objectArray.length);
+                        System.arraycopy(objectArray, 0, typedArray, 0, objectArray.length);
+                        parameterValues[i] = typedArray;
+                    }
+                } else {
+                    throw new Exception(
+                            "Impossible de convertir le paramètre " + param.getName() + " en " + paramType.getName());
+                }
             } else {
                 mg.p16.annotations.Annotation.Valid validAnnotation = param
                         .getAnnotation(mg.p16.annotations.Annotation.Valid.class);
+                paramValue = validAnnotation.value();
                 if (validAnnotation == null) {
                     throw new Exception("Etu002635 : le parametre " + param.getName() + " dans " + method.getName()
                             + " doit avoir une annotation @Valid");
@@ -284,11 +500,11 @@ public class Fonction {
                                     String.join(", ", responseValidation.getErrors()));
                         }
                     }
-
                     parameterValues[i] = paramObject;
                 } catch (Exception e) {
                     throw new IllegalArgumentException(
-                            "Erreur lors de la creation de l'objet parametre : " + param.getName(), e);
+                            "Erreur lors de la création de l'objet paramètre : " + paramType.getClass().getSimpleName(),
+                            e);
                 }
             }
         }
@@ -400,13 +616,8 @@ public class Fonction {
             if (returnValue instanceof String s) {
                 out.println(s);
             }
-            // Gerer la reponse selon le type de retour de la methode
             if (method.isAnnotationPresent(mg.p16.annotations.Annotation.RestApi.class)) {
-                response.setContentType("application/json");
-                if (returnValue instanceof ModelView m) {
-                    out.println(new Gson().toJson(m.getData()));
-                }
-                out.println(new Gson().toJson(returnValue));
+                sendGson(returnValue, response, out);
             } else {
                 if (returnValue instanceof ModelView modelView) {
                     request.getSession().setAttribute("page_precedent", modelView);
@@ -418,11 +629,19 @@ public class Fonction {
             displayErrorPage(out, e);
 
         } catch (Exception e) {
-            // Afficher la page d'erreur
+            // Afficher la page d'erreurj
             response.setContentType("text/html");
+            System.out.println("tena ato ilay erreur");
             displayErrorPage(out, new CustomException(500, "Erreur interne du serveur",
                     "Une erreur inattendue s'est produite : " + e.getMessage()));
         }
+    }
+
+    public static void sendGson(Object data, HttpServletResponse response, PrintWriter out) throws IOException {
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        out.println(new Gson().toJson(data));
+        out.flush();
     }
 
     static void displayErrorPage(PrintWriter out, CustomException e) {
@@ -453,24 +672,37 @@ public class Fonction {
 
     public static void sendModelView(ModelView modelView, HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+
+        HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
+            @Override
+            public String getMethod() {
+                return "GET"; // Forcer la méthode à "GET"
+            }
+        };
+
         System.out.println(modelView.getUrl());
-        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-            request.setAttribute(entry.getKey(), entry.getValue());
-            System.out.println(entry.getKey() + "_" + entry.getValue());
 
-        }
+        // Ajouter les données au scope de la requête
+        modelView.getData().forEach((key, value) -> {
+            wrappedRequest.setAttribute(key, value);
+            System.out.println(key + " : " + value);
+        });
 
-        for (Map.Entry<String, String> errorEntry : modelView.getValidationErrors().entrySet()) {
-            request.setAttribute(errorEntry.getKey(), errorEntry.getValue());
-            System.out.println(errorEntry.getKey() + " : " + errorEntry.getValue());
-        }
+        // Ajouter les erreurs de validation
+        modelView.getValidationErrors().forEach((key, value) -> {
+            wrappedRequest.setAttribute(key, value);
+            System.out.println("Erreur - " + key + " : " + value);
+        });
 
-        for (Map.Entry<String, Object> valueEntry : modelView.getValidationValues().entrySet()) {
-            request.setAttribute(valueEntry.getKey(), valueEntry.getValue());
-            System.out.println(valueEntry.getKey() + " : " + valueEntry.getValue());
-        }
+        // Ajouter les valeurs validées
+        modelView.getValidationValues().forEach((key, value) -> {
+            wrappedRequest.setAttribute(key, value);
+            System.out.println("Valeur validée - " + key + " : " + value);
+        });
 
-        RequestDispatcher dispatch = request.getRequestDispatcher(modelView.getUrl());
-        dispatch.forward(request, response);
+        // Rediriger vers la vue
+        RequestDispatcher dispatch = wrappedRequest.getRequestDispatcher(modelView.getUrl());
+        dispatch.forward(wrappedRequest, response);
     }
+
 }
